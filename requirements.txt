@@ -1,0 +1,4 @@
+gmpy2>=2.1
+sympy>=1.12
+pycryptodome>=3.19
+pytest>=7.0
