@@ -21,13 +21,6 @@ from weakrsa.attacks import batch_gcd
 
 st.set_page_config(page_title="Weak RSA — Attack Visualizer", page_icon="🔓", layout="wide")
 
-# A small palette for colouring key clusters that share a prime.
-CLUSTER_COLORS = [
-    "#e6194B", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#42d4f4",
-    "#f032e6", "#bfef45", "#fabed4", "#469990", "#dcbeff", "#9A6324",
-]
-
-
 def fingerprint(n: int) -> str:
     """Short, readable fingerprint of a big modulus."""
     h = hex(n)[2:]
@@ -51,8 +44,9 @@ def page_batch_gcd() -> None:
         bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1,
                             help="Attack is size-independent; smaller keeps the demo snappy.")
         count = st.slider("Number of devices", 10, 100, 40)
-        entropy = st.slider("RNG entropy (distinct 1st primes)", 3, 80, 12,
-                           help="Lower entropy → more shared primes → more keys broken.")
+        entropy = st.slider("RNG entropy (distinct 1st primes)", 3, 300, 12,
+                           help="Distinct values p can take. Set it far above the device "
+                                "count for few/no collisions; the 'fix' panel shows a truly random RNG.")
         seed = st.number_input("RNG seed", value=1234, step=1)
         gen = st.button("🏭 Generate fleet", type="primary", use_container_width=True)
         st.divider()
@@ -83,12 +77,15 @@ def page_batch_gcd() -> None:
     reveal_at = st.session_state.bg_reveal_at
     total = len(frames)
 
-    # colour each broken key by the prime it shares
+    # Broken keys are all green. We still group keys that share a prime and tag
+    # each with a small group number, so "which keys collided" stays visible.
     cluster = batch_gcd.clusters(farm.moduli, found)
-    prime_color = {p: CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
-                   for i, p in enumerate(sorted(cluster))}
-    key_color = {idx: prime_color[found[idx]]
-                 for idx in found if found[idx] in prime_color}
+    key_group: dict[int, int] = {}
+    for gi, p in enumerate(sorted(cluster), start=1):
+        for idx in cluster[p]:
+            key_group[idx] = gi
+    BROKEN_COLOR = "#2e7d32"  # green
+    LOCKED_COLOR = "#2b2b2b"  # grey
 
     # ---- transport controls ---------------------------------------------- #
     c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
@@ -139,14 +136,17 @@ def page_batch_gcd() -> None:
             if idx >= len(farm.keys):
                 break
             revealed = idx in reveal_at and reveal_at[idx] < step
-            color = key_color.get(idx, "#2b2b2b") if revealed else "#2b2b2b"
+            color = BROKEN_COLOR if revealed else LOCKED_COLOR
             border = "3px solid #ffd60a" if idx in active else "1px solid #555"
             label = "🔓" if revealed else "🔒"
+            tag = (f"<br><span style='font-size:9px;opacity:.85;'>group {key_group[idx]}</span>"
+                   if revealed and idx in key_group else "")
             cols[off].markdown(
                 f"<div style='background:{color};border:{border};border-radius:8px;"
                 f"padding:6px;text-align:center;font-size:11px;color:#fff;'>"
                 f"<b>#{idx}</b><br>{label}<br>"
                 f"<span style='font-family:monospace;font-size:9px;'>{fingerprint(farm.keys[idx].n)}</span>"
+                f"{tag}"
                 f"</div>",
                 unsafe_allow_html=True,
             )
@@ -175,13 +175,14 @@ def page_batch_gcd() -> None:
     # ---- the fix ---------------------------------------------------------- #
     with st.expander("🛡️  The fix — properly seed the RNG"):
         st.write(
-            "With a well-seeded CSPRNG every prime is unique, so no two moduli "
-            "share a factor and every GCD is 1. Same fleet size, full entropy:"
+            "A properly seeded RNG draws **both** primes freshly from the full "
+            "~10⁷⁴ possibilities, so every prime across the fleet is unique, no two "
+            "moduli share a factor, and every GCD is 1. Same fleet size, real randomness:"
         )
-        safe_farm = keygen.low_entropy_farm(count=count, bits=bits,
-                                            entropy_primes=count, seed=int(seed) + 1)
-        safe_found = batch_gcd.batch_gcd(safe_farm.moduli)
-        st.metric("Keys broken with the fix", f"{len(safe_found)} / {len(safe_farm.keys)}")
+        safe_keys = [keygen.safe_key(bits=bits) for _ in range(count)]
+        safe_mods = [k.n for k in safe_keys]
+        safe_found = batch_gcd.batch_gcd(safe_mods)
+        st.metric("Keys broken with the fix", f"{len(safe_found)} / {len(safe_keys)}")
 
     # ---- drive the animation --------------------------------------------- #
     if st.session_state.bg_playing and step < total:
