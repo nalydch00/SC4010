@@ -279,7 +279,7 @@ def page_fermat() -> None:
     frames = st.session_state.fr_frames
     total = len(frames)
     found_frame = frames[-1] if frames and frames[-1]["found"] else None
-    stride = max(1, total // 150)
+    stride = max(1, total // 60)
 
     step = _run_controls("fr_", total, step_amt=stride)
     cur = frames[step - 1] if 0 < step <= total else None
@@ -300,7 +300,7 @@ def page_fermat() -> None:
             + ("✅ **yes — factored!**" if cur["is_square"] else "❌ no, keep climbing")
         )
 
-    if found_frame:
+    if found_frame and step >= total:
         p, q = found_frame["p"], found_frame["q"]
         d = modinv(key.e, (p - 1) * (q - 1))
         ok = {p, q} == {key.p, key.q}
@@ -386,7 +386,7 @@ def page_wiener() -> None:
                + ("**→ factors N! 🔓**" if cur["found"] else ""))
         st.markdown(msg)
 
-    if found_frame:
+    if found_frame and step >= total:
         p, q, d = found_frame["p"], found_frame["q"], found_frame["d"]
         ok = d == key.d and {p, q} == {key.p, key.q}
         st.subheader("Recovered key")
