@@ -45,3 +45,39 @@ def attack(public: dict) -> dict | None:
         if p * q == n:
             return {"d": d, "p": max(p, q), "q": min(p, q)}
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Step-by-step variant, for the interactive visualizer.
+# --------------------------------------------------------------------------- #
+def iter_steps(public: dict):
+    """Yield one frame per convergent k/d of e/N tested.
+
+    Each frame: {'idx', 'k', 'd', 'phi_integer', 'found', 'p', 'q'}.
+    Stops after the convergent that factors N (found=True), if any.
+    """
+    n, e = public["n"], public["e"]
+    cf = continued_fraction(e, n)
+    for idx, (k, d) in enumerate(convergents(cf)):
+        if k == 0 or d == 0:
+            yield {"idx": idx, "k": k, "d": d, "phi_integer": False,
+                   "found": False, "p": None, "q": None}
+            continue
+        phi_integer = (e * d - 1) % k == 0
+        found = False
+        p = q = None
+        if phi_integer:
+            phi = (e * d - 1) // k
+            s = n - phi + 1
+            disc = s * s - 4 * n
+            if disc >= 0:
+                root = exact_sqrt(disc)
+                if root is not None and (s + root) % 2 == 0:
+                    pp = (s + root) // 2
+                    qq = (s - root) // 2
+                    if pp * qq == n:
+                        found, p, q = True, max(pp, qq), min(pp, qq)
+        yield {"idx": idx, "k": k, "d": d, "phi_integer": phi_integer,
+               "found": found, "p": p, "q": q}
+        if found:
+            return

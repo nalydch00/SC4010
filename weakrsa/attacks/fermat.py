@@ -51,3 +51,29 @@ def attack(public: dict, max_steps: int = 10_000_000) -> dict | None:
             return {"p": q, "q": p, "steps": steps}
         a += 1
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Step-by-step variant, for the interactive visualizer.
+# --------------------------------------------------------------------------- #
+def iter_steps(n: int, max_steps: int = 2_000_000):
+    """Yield one frame per trial value of `a`, climbing from ceil(sqrt(n)).
+
+    Each frame: {'a', 'steps', 'is_square', 'found', 'p', 'q'}.
+    Stops after the frame that finds the factorisation (found=True).
+    """
+    a = isqrt(n)
+    if a * a < n:
+        a += 1
+    steps = 0
+    while steps < max_steps:
+        b = exact_sqrt(a * a - n)
+        steps += 1
+        if b is not None:
+            p, q = a + b, a - b
+            yield {"a": a, "steps": steps, "is_square": True,
+                   "found": True, "p": max(p, q), "q": min(p, q)}
+            return
+        yield {"a": a, "steps": steps, "is_square": False,
+               "found": False, "p": None, "q": None}
+        a += 1

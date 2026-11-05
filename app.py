@@ -17,7 +17,8 @@ import time
 import streamlit as st
 
 from weakrsa import keygen
-from weakrsa.attacks import batch_gcd
+from weakrsa.attacks import batch_gcd, fermat, hastad, wiener
+from weakrsa.utils import modinv
 
 st.set_page_config(page_title="Weak RSA — Attack Visualizer", page_icon="🔓", layout="wide")
 
@@ -204,52 +205,295 @@ def _advance_to_next_collision(frames: list[dict], step: int, max_scan: int = 60
 
 
 # ========================================================================== #
-#  Stub pages for the other three attacks (skeleton to expand into)
+#  Shared transport controls for the single-key pages
 # ========================================================================== #
-def _stub(title: str, caption: str, plan: str) -> None:
-    st.title(title)
-    st.caption(caption)
-    st.info("🚧 Interactive page coming next — planned layout below.")
-    st.markdown(plan)
+def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
+    if c1.button("▶ Play", key=prefix + "play", use_container_width=True):
+        st.session_state[prefix + "playing"] = True
+    if c2.button("⏭ Step", key=prefix + "stepbtn", use_container_width=True):
+        st.session_state[prefix + "playing"] = False
+        st.session_state[prefix + "step"] = min(st.session_state[prefix + "step"] + step_amt, total)
+    if c3.button("⏮ Reset", key=prefix + "reset", use_container_width=True):
+        st.session_state[prefix + "playing"] = False
+        st.session_state[prefix + "step"] = 0
+    if c4.button("⏩ Run to end", key=prefix + "end", use_container_width=True):
+        st.session_state[prefix + "playing"] = False
+        st.session_state[prefix + "step"] = total
+    return st.session_state[prefix + "step"]
 
 
+def _drive(prefix: str, step: int, total: int, speed: int, stride: int = 1) -> None:
+    if st.session_state.get(prefix + "playing") and step < total:
+        st.session_state[prefix + "step"] = min(step + stride, total)
+        time.sleep(1.0 / speed)
+        st.rerun()
+    elif step >= total:
+        st.session_state[prefix + "playing"] = False
+
+
+# ========================================================================== #
+#  Attack page: Fermat factorisation
+# ========================================================================== #
 def page_fermat() -> None:
-    _stub(
-        "📐 Fermat factorisation — close primes",
-        "When p and q are generated too close together, N sits just below a "
-        "perfect square and factors in a short search.",
-        "- **Slider:** prime gap.\n"
-        "- **Animation:** `a` climbs from ⌈√N⌉; each step shows `a²−N` and "
-        "whether it is a perfect square; green flash + factor reveal on success.\n"
-        "- **Live:** step counter vs. the `(p−q)²/(4√N)` estimate.\n"
-        "- **Fix toggle:** independently-drawn primes → search never terminates.",
+    st.title("📐 Fermat factorisation — close primes")
+    st.caption(
+        "When p and q are generated too close together, N = p·q sits just below a "
+        "perfect square. A search upward from ⌈√N⌉ then factors it in a few steps."
     )
+    with st.sidebar:
+        st.header("Key settings")
+        bits = st.selectbox("Key size (bits)", [128, 256, 512, 1024], index=1, key="fr_bits")
+        max_gap = bits // 2 - 4
+        gap = st.slider("Prime gap (bits) — smaller = closer = faster to break",
+                        20, max_gap, min(72, max_gap), key="fr_gap")
+        seed = st.number_input("Seed", value=1, step=1, key="fr_seed")
+        gen = st.button("🔑 Generate key", type="primary", use_container_width=True, key="fr_gen")
+        st.divider()
+        speed = st.slider("Animation speed", 1, 20, 12, key="fr_speed")
+
+    if gen or "fr_frames" not in st.session_state:
+        key = keygen.close_primes_key(bits=bits, gap_bits=gap, seed=int(seed))
+        frames = []
+        for fr in fermat.iter_steps(key.n, max_steps=300_000):
+            frames.append(fr)
+            if fr["found"] or len(frames) >= 30_000:
+                break
+        st.session_state.fr_key = key
+        st.session_state.fr_frames = frames
+        st.session_state.fr_step = 0
+        st.session_state.fr_playing = False
+
+    key = st.session_state.fr_key
+    frames = st.session_state.fr_frames
+    total = len(frames)
+    found_frame = frames[-1] if frames and frames[-1]["found"] else None
+    stride = max(1, total // 150)
+
+    step = _run_controls("fr_", total, step_amt=stride)
+    cur = frames[step - 1] if 0 < step <= total else None
+    broke = cur is not None and cur["found"]
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Steps searched", f"{(cur['steps'] if cur else 0):,} / {total:,}")
+    m2.metric("Status", "BROKEN 🔓" if broke else "searching…")
+    m3.metric("Prime gap", f"2^{gap}")
+    st.progress(step / total if total else 0.0)
+
+    st.markdown(f"**N** = `{fingerprint(key.n)}`  ({key.n.bit_length()} bits)")
+    if cur is not None:
+        st.markdown(
+            f"Testing **a** = `{fingerprint(cur['a'])}` — is `a² − N` a perfect square?  "
+            + ("✅ **yes — factored!**" if cur["is_square"] else "❌ no, keep climbing")
+        )
+
+    if found_frame:
+        p, q = found_frame["p"], found_frame["q"]
+        d = modinv(key.e, (p - 1) * (q - 1))
+        ok = {p, q} == {key.p, key.q}
+        st.subheader("Recovered key")
+        a, b = st.columns(2)
+        a.markdown(f"**Public**\n\n- N = `{fingerprint(key.n)}`\n- e = `{key.e}`")
+        b.markdown(f"**Recovered (secret)**\n\n- p = `{fingerprint(p)}`\n- q = `{fingerprint(q)}`\n- d = `{fingerprint(d)}`")
+        st.success("✅ Factored — recovered key matches the real one." if ok else "❌ mismatch (bug)")
+    elif step >= total:
+        st.warning("Not factored within the step budget — the primes weren't close enough. "
+                   "Lower the prime gap and regenerate.")
+
+    with st.expander("🛡️  The fix — draw p and q independently"):
+        st.write(
+            "With independently chosen primes, |p − q| is about 2^(bits/2) — "
+            "astronomically large — so `a` starts astronomically far from (p+q)/2 "
+            "and the search never finishes."
+        )
+        safe = keygen.safe_key(bits=bits)
+        res = fermat.attack(safe.public(), max_steps=3000)
+        st.metric("Factored within 3000 steps", "no ✅ (resisted)" if res is None else "yes ❌")
+
+    _drive("fr_", step, total, speed, stride=stride)
 
 
+# ========================================================================== #
+#  Attack page: Wiener
+# ========================================================================== #
 def page_wiener() -> None:
-    _stub(
-        "🔑 Wiener's attack — tiny private exponent",
-        "A small private exponent d (d < N^0.25) leaks through the continued "
-        "fraction of e/N.",
-        "- **Slider:** size of d (bits).\n"
-        "- **Animation:** convergents of e/N tested one by one; each shows k/d, "
-        "the candidate φ, and whether it factors N.\n"
-        "- **Gauge:** where d sits relative to the N^0.25 cliff.\n"
-        "- **Fix toggle:** choose e first (65537), derive d → attack fails.",
+    st.title("🔑 Wiener's attack — tiny private exponent")
+    st.caption(
+        "A small private exponent d (d < N^0.25) leaks through the "
+        "continued-fraction convergents of e/N — no factoring search needed."
     )
+    with st.sidebar:
+        st.header("Key settings")
+        bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1, key="wn_bits")
+        bound = bits // 4
+        d_bits = st.slider("Size of private exponent d (bits)",
+                           bound - 40, bound + 16, bound - 8, key="wn_dbits",
+                           help=f"N^0.25 ≈ 2^{bound}. Below it → Wiener works; above → safe.")
+        seed = st.number_input("Seed", value=1, step=1, key="wn_seed")
+        gen = st.button("🔑 Generate key", type="primary", use_container_width=True, key="wn_gen")
+        st.divider()
+        speed = st.slider("Animation speed", 1, 20, 6, key="wn_speed")
+
+    bound = bits // 4
+    if gen or "wn_frames" not in st.session_state:
+        key = keygen.small_d_key(bits=bits, d_bits=int(d_bits), seed=int(seed))
+        frames = list(wiener.iter_steps(key.public()))
+        st.session_state.wn_key = key
+        st.session_state.wn_frames = frames
+        st.session_state.wn_gen_dbits = int(d_bits)
+        st.session_state.wn_step = 0
+        st.session_state.wn_playing = False
+
+    key = st.session_state.wn_key
+    frames = st.session_state.wn_frames
+    total = len(frames)
+    dbits = st.session_state.wn_gen_dbits
+    found_frame = frames[-1] if frames and frames[-1]["found"] else None
+    vulnerable = dbits < bound
+
+    step = _run_controls("wn_", total)
+    cur = frames[step - 1] if 0 < step <= total else None
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Convergents tested", f"{step} / {total}")
+    m2.metric("d size", f"{dbits} bits")
+    m3.metric("N^0.25 cliff", f"{bound} bits", delta=f"{dbits - bound:+d} vs cliff",
+              delta_color="inverse")
+    st.progress(step / total if total else 0.0)
+    st.caption("🟢 d is **below** the N^0.25 cliff — Wiener should succeed."
+               if vulnerable else
+               "🔴 d is **above** the cliff — Wiener should fail (the safe zone).")
+
+    if cur is not None:
+        msg = (f"Convergent #{cur['idx']}:  k = `{cur['k']}`,  d = `{fingerprint(cur['d'])}`  —  "
+               + ("φ(N) comes out an integer ✅  " if cur["phi_integer"]
+                  else "φ(N) not an integer ❌  ")
+               + ("**→ factors N! 🔓**" if cur["found"] else ""))
+        st.markdown(msg)
+
+    if found_frame:
+        p, q, d = found_frame["p"], found_frame["q"], found_frame["d"]
+        ok = d == key.d and {p, q} == {key.p, key.q}
+        st.subheader("Recovered key")
+        a, b = st.columns(2)
+        a.markdown(f"**Public**\n\n- N = `{fingerprint(key.n)}`\n- e = `{fingerprint(key.e)}`")
+        b.markdown(f"**Recovered (secret)**\n\n- d = `{fingerprint(d)}`\n- p = `{fingerprint(p)}`\n- q = `{fingerprint(q)}`")
+        st.success("✅ Recovered d matches the real private key." if ok else "❌ mismatch (bug)")
+    elif step >= total:
+        st.warning("No convergent factored N — d was too large for Wiener. That's the safe case.")
+
+    with st.expander("🛡️  The fix — pick e first, derive d"):
+        st.write(
+            "A proper key fixes e = 65537 and derives d, so d is about as large as N. "
+            "None of the convergents of e/N reveal it."
+        )
+        safe = keygen.safe_key(bits=bits)
+        st.metric("Wiener on a proper key",
+                  "fails ✅" if wiener.attack(safe.public()) is None else "breaks ❌")
+
+    _drive("wn_", step, total, speed)
 
 
+# ========================================================================== #
+#  Attack page: Håstad broadcast
+# ========================================================================== #
 def page_hastad() -> None:
-    _stub(
-        "📡 Håstad broadcast — e = 3, no padding",
-        "The same message sent to 3 recipients with e = 3 and no padding is "
-        "recoverable by CRT + a cube root, without factoring anything.",
-        "- **Input:** type a message; 3 recipients encrypt it.\n"
-        "- **Animation:** CRT combines the 3 ciphertexts → integer cube root → "
-        "message appears.\n"
-        "- **Toggle:** drop to 2 ciphertexts and watch it fail.\n"
-        "- **Fix toggle:** OAEP padding → broadcast attack fails.",
+    st.title("📡 Håstad broadcast — e = 3, no padding")
+    st.caption(
+        "Send the same unpadded message to ≥ 3 people with e = 3: combining the "
+        "ciphertexts by CRT and taking a cube root recovers it, with no factoring."
     )
+    with st.sidebar:
+        st.header("Broadcast settings")
+        bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1, key="hs_bits")
+        recipients = st.slider("Number of recipients", 2, 6, 3, key="hs_rcpt",
+                              help="The attack needs at least e = 3.")
+        message = st.text_input("Secret message", "crypto", key="hs_msg")
+        seed = st.number_input("Seed", value=1, step=1, key="hs_seed")
+        gen = st.button("📣 Broadcast", type="primary", use_container_width=True, key="hs_gen")
+        st.divider()
+        speed = st.slider("Animation speed", 1, 20, 3, key="hs_speed")
+
+    e = 3
+    if gen or "hs_frames" not in st.session_state:
+        keys = [keygen.small_e_key(bits=bits, e=e, seed=int(seed) * 100 + i)
+                for i in range(recipients)]
+        raw = message.encode("utf-8") or b"\x00"
+        m_int = int.from_bytes(raw, "big")
+        min_n = min(k.n for k in keys)
+        if m_int >= min_n:
+            m_int %= min_n
+        cts = [k.encrypt(m_int) for k in keys]
+        mods = [k.n for k in keys]
+        st.session_state.hs_keys = keys
+        st.session_state.hs_frames = list(hastad.iter_steps(cts, mods, e))
+        st.session_state.hs_step = 0
+        st.session_state.hs_playing = False
+
+    keys = st.session_state.hs_keys
+    frames = st.session_state.hs_frames
+    total = len(frames)
+    final = frames[-1] if frames else None
+
+    step = _run_controls("hs_", total)
+    cur = frames[step - 1] if 0 < step <= total else None
+    recovered = bool(final and final.get("message") is not None and step >= total)
+
+    m1, m2 = st.columns(2)
+    m1.metric("Ciphertexts combined", f"{min(step, len(keys))} / {len(keys)}")
+    m2.metric("Status", "RECOVERED 🔓" if recovered else "combining…")
+    st.progress(step / total if total else 0.0)
+
+    # recipient cards
+    if cur is not None and cur.get("stage") == "combine":
+        revealed = cur["added"] + 1
+    elif step >= total:
+        revealed = len(keys)
+    else:
+        revealed = 0
+    st.subheader("Recipients (same message, e = 3)")
+    cols = st.columns(len(keys))
+    for i, k in enumerate(keys):
+        lit = i < revealed
+        color = "#2e7d32" if lit else "#2b2b2b"
+        cols[i].markdown(
+            f"<div style='background:{color};border:1px solid #555;border-radius:8px;"
+            f"padding:8px;text-align:center;font-size:12px;color:#fff;'>"
+            f"<b>#{i}</b><br>{'📨' if lit else '🔒'}<br>"
+            f"<span style='font-family:monospace;font-size:9px;'>N={fingerprint(k.n)}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    if cur is not None and cur.get("stage") == "combine":
+        st.markdown(
+            f"Folded in ciphertext #{cur['added']} → combined value `{fingerprint(cur['combined'])}`"
+            + ("" if cur["enough"] else "  *(need ≥ 3 before the cube root works)*")
+        )
+    elif cur is not None and cur.get("stage") == "root":
+        st.markdown("Took the **integer cube root** of the CRT-combined value.")
+
+    if step >= total:
+        if final and final.get("message") is not None:
+            m = final["message"]
+            try:
+                txt = m.to_bytes((m.bit_length() + 7) // 8, "big").decode("utf-8", "replace")
+            except Exception:
+                txt = str(m)
+            st.success(f"✅ Recovered message:  **{txt}**")
+            st.caption("Recovered from ciphertexts alone — no key was factored.")
+        else:
+            st.error("❌ Cube root not exact — fewer than 3 ciphertexts. Håstad needs e = 3 of them. "
+                     "Raise the recipient count to 3+.")
+
+    with st.expander("🛡️  The fix — pad the message (OAEP)"):
+        st.write(
+            "Randomised OAEP padding makes each recipient's plaintext different, so the "
+            "ciphertexts are no longer encryptions of the *same* integer — CRT has nothing "
+            "to line up, and the cube root is meaningless."
+        )
+
+    _drive("hs_", step, total, speed)
 
 
 # ========================================================================== #

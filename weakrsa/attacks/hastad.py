@@ -28,3 +28,28 @@ def attack(ciphertexts: list[int], moduli: list[int], e: int) -> int | None:
     combined, _ = crt(c, mod)
     m = exact_iroot(combined, e)
     return m
+
+
+# --------------------------------------------------------------------------- #
+# Step-by-step variant, for the interactive visualizer.
+# --------------------------------------------------------------------------- #
+def iter_steps(ciphertexts: list[int], moduli: list[int], e: int):
+    """Yield frames as the e ciphertexts are combined by CRT, then cube-rooted.
+
+    One 'combine' frame per ciphertext folded in, then a final 'root' frame:
+      combine: {'stage','added','count','combined','product','enough','message'}
+      root:    {'stage':'root','combined','product','message'}
+    'message' is the recovered integer once enough (>= e) congruences are in and
+    the e-th root is exact; otherwise None.
+    """
+    for idx in range(len(moduli)):
+        c = ciphertexts[: idx + 1]
+        mod = moduli[: idx + 1]
+        combined, product = crt(c, mod)
+        enough = (idx + 1) >= e
+        m = exact_iroot(combined, e) if enough else None
+        yield {"stage": "combine", "added": idx, "count": idx + 1,
+               "combined": combined, "product": product, "enough": enough, "message": m}
+    combined, product = crt(ciphertexts[:e], moduli[:e])
+    yield {"stage": "root", "combined": combined, "product": product,
+           "message": exact_iroot(combined, e)}

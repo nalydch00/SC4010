@@ -50,19 +50,34 @@ def _rand_prime(bits: int) -> int:
     return int(randprime(lo, hi))
 
 
+def _seeded_prime(rng, bits: int) -> int:
+    """Deterministic prime of the given bit-length from a seeded random.Random."""
+    return int(nextprime(rng.randrange(1 << (bits - 1), 1 << bits)))
+
+
 # --------------------------------------------------------------------------- #
 # Weakness 1: close primes  ->  Fermat factorisation
 # --------------------------------------------------------------------------- #
-def close_primes_key(bits: int = 2048, gap_bits: int = 100, e: int = 65537) -> RSAKey:
+def close_primes_key(bits: int = 2048, gap_bits: int = 100, e: int = 65537,
+                     seed: int | None = None) -> RSAKey:
     """p and q only ~2**gap_bits apart.
+
+    Pass ``seed`` for a reproducible key (useful for a rehearsed demo).
 
     FIX: draw p and q independently; |p - q| should be ~2**(bits/2), astronomically
     large. Here we force them close so Fermat's method converges in a few steps.
     """
+    import random
+
     half = bits // 2
-    p = _rand_prime(half)
+    if seed is not None:
+        rng = random.Random(seed)
+        p = _seeded_prime(rng, half)
+        offset = rng.randrange(1 << (gap_bits - 1), 1 << gap_bits) | 1
+    else:
+        p = _rand_prime(half)
+        offset = int(gmpy2.mpz_random(gmpy2.random_state(), 1 << gap_bits)) | 1
     # q = next prime a little above p, with a small random offset.
-    offset = int(gmpy2.mpz_random(gmpy2.random_state(), 1 << gap_bits)) | 1
     q = int(nextprime(p + offset))
     n = p * q
     d = modinv(e, (p - 1) * (q - 1))
@@ -72,26 +87,31 @@ def close_primes_key(bits: int = 2048, gap_bits: int = 100, e: int = 65537) -> R
 # --------------------------------------------------------------------------- #
 # Weakness 2: tiny private exponent  ->  Wiener's attack
 # --------------------------------------------------------------------------- #
-def small_d_key(bits: int = 2048, d_bits: int | None = None) -> RSAKey:
+def small_d_key(bits: int = 2048, d_bits: int | None = None,
+               seed: int | None = None) -> RSAKey:
     """Private exponent d chosen small (for 'fast' decryption), then e = d**-1.
 
     Wiener breaks this whenever d < N**0.25 / 3. We default d_bits safely inside
-    that bound.
+    that bound. Pass ``seed`` for a reproducible key.
 
     FIX: never pick d first; pick e (e.g. 65537) and derive d. A small d is fatal.
     """
+    import random
+
     half = bits // 2
     if d_bits is None:
         # N**0.25 ~ 2**(bits/4). Stay comfortably below with a margin.
         d_bits = bits // 4 - 8
+    rng = random.Random(seed) if seed is not None else None
+    prime = (lambda b: _seeded_prime(rng, b)) if rng is not None else _rand_prime
     while True:
-        p = _rand_prime(half)
-        q = _rand_prime(half)
+        p = prime(half)
+        q = prime(half)
         if p == q:
             continue
         phi = (p - 1) * (q - 1)
         # pick an odd d of the requested size, coprime to phi
-        d = (_rand_prime(d_bits)) | 1
+        d = prime(d_bits) | 1
         if gmpy2.gcd(d, phi) != 1:
             continue
         e = modinv(d, phi)
@@ -102,19 +122,24 @@ def small_d_key(bits: int = 2048, d_bits: int | None = None) -> RSAKey:
 # --------------------------------------------------------------------------- #
 # Weakness 3: e = 3 with no padding  ->  Håstad broadcast
 # --------------------------------------------------------------------------- #
-def small_e_key(bits: int = 2048, e: int = 3) -> RSAKey:
+def small_e_key(bits: int = 2048, e: int = 3, seed: int | None = None) -> RSAKey:
     """A normal-looking key but with e = 3 and (implicitly) textbook RSA, no pad.
 
     Dangerous only when the *same* message is sent to >= e recipients. The demo
-    builds several of these and broadcasts one plaintext.
+    builds several of these and broadcasts one plaintext. Pass ``seed`` for a
+    reproducible key.
 
     FIX: always use OAEP padding (and e = 65537). Textbook RSA of a small message
     is never safe.
     """
+    import random
+
     half = bits // 2
+    rng = random.Random(seed) if seed is not None else None
+    prime = (lambda b: _seeded_prime(rng, b)) if rng is not None else _rand_prime
     while True:
-        p = _rand_prime(half)
-        q = _rand_prime(half)
+        p = prime(half)
+        q = prime(half)
         phi = (p - 1) * (q - 1)
         if gmpy2.gcd(e, phi) != 1:
             continue  # e must be coprime to phi

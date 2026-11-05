@@ -28,6 +28,25 @@ python benchmark.py     # find where each attack stops working (for the A-grade 
 python -m pytest        # correctness tests
 ```
 
+## Interactive visualizer (for the live demo)
+
+```bash
+streamlit run app.py
+```
+
+A web app that *shows* each attack running. Pick a weakness in the sidebar, dial
+its parameters, then Play/Step through the break:
+
+- **Batch GCD** — a grid of devices; keys light up green as shared primes are
+  found, with live "% of fleet broken" and full key recovery.
+- **Fermat** — watch `a` climb from √N until `a²−N` is a perfect square.
+- **Wiener** — convergents of `e/N` tested one by one against the `N^0.25` cliff.
+- **Håstad** — three ciphertexts combined by CRT, then a cube root reveals the
+  message.
+
+Every page has a **"the fix"** panel showing the attack failing against a
+correctly generated key.
+
 ## Why each attack works (one line each, for Q&A)
 
 - **Fermat.** If `p, q` are close, `N = p·q` is just below a perfect square.
