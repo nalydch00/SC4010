@@ -20,23 +20,23 @@ from weakrsa import keygen
 from weakrsa.attacks import batch_gcd, fermat, hastad, wiener
 from weakrsa.utils import modinv
 
-st.set_page_config(page_title="Weak RSA — Attack Visualizer", page_icon="🔓", layout="wide")
+st.set_page_config(page_title="Weak RSA Attack Visualizer", layout="wide")
 
 def fingerprint(n: int) -> str:
     """Short, readable fingerprint of a big modulus."""
     h = hex(n)[2:]
-    return f"{h[:8]}…{h[-6:]}"
+    return f"{h[:8]}...{h[-6:]}"
 
 
 # ========================================================================== #
 #  Attack page: Batch GCD
 # ========================================================================== #
 def page_batch_gcd() -> None:
-    st.title("🔓 Batch GCD — low-entropy RNG")
+    st.title("Batch GCD - low-entropy RNG")
     st.caption(
         "A fleet of devices with a weak boot-time RNG reuses primes across keys. "
         "If two public moduli share a prime, `gcd(Nᵢ, Nⱼ)` reveals it and both "
-        "keys fall — the *Mind your Ps and Qs* attack."
+        "keys fall - the *Mind your Ps and Qs* attack."
     )
 
     # ---- controls ---------------------------------------------------------- #
@@ -49,13 +49,13 @@ def page_batch_gcd() -> None:
                            help="Distinct values p can take. Set it far above the device "
                                 "count for few/no collisions; the 'fix' panel shows a truly random RNG.")
         seed = st.number_input("RNG seed", value=1234, step=1)
-        gen = st.button("🏭 Generate fleet", type="primary", use_container_width=True)
+        gen = st.button("Generate fleet", type="primary", use_container_width=True)
         st.divider()
         speed = st.slider("Animation speed", 1, 20, 8)
 
     # ---- (re)generate the fleet ------------------------------------------- #
     if gen or "bg_farm" not in st.session_state:
-        with st.spinner(f"Generating {count} keys at {bits}-bit…"):
+        with st.spinner(f"Generating {count} keys at {bits}-bit..."):
             farm = keygen.low_entropy_farm(count=count, bits=bits,
                                            entropy_primes=entropy, seed=int(seed))
             found = batch_gcd.batch_gcd(farm.moduli)
@@ -95,16 +95,16 @@ def page_batch_gcd() -> None:
 
     # ---- transport controls ---------------------------------------------- #
     c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
-    if c1.button("▶ Play", use_container_width=True):
+    if c1.button("Play", use_container_width=True):
         st.session_state.bg_playing = True
-    if c2.button("⏭ Step", use_container_width=True):
+    if c2.button("Step", use_container_width=True):
         st.session_state.bg_playing = False
         st.session_state.bg_step = _advance_to_next_collision(
             frames, st.session_state.bg_step)
-    if c3.button("⏮ Reset", use_container_width=True):
+    if c3.button("Reset", use_container_width=True):
         st.session_state.bg_playing = False
         st.session_state.bg_step = 0
-    if c4.button("⏩ Run to end", use_container_width=True):
+    if c4.button("Run to end", use_container_width=True):
         st.session_state.bg_playing = False
         st.session_state.bg_step = total
 
@@ -125,11 +125,11 @@ def page_batch_gcd() -> None:
     if cur is not None and cur["collision"]:
         i, j = cur["i"], cur["j"]
         st.success(
-            f"💥 Collision! `gcd(N{i}, N{j})` = shared prime "
-            f"`{fingerprint(cur['gcd'])}` → keys **{i}** and **{j}** both broken."
+            f"Collision! `gcd(N{i}, N{j})` = shared prime "
+            f"`{fingerprint(cur['gcd'])}` -> keys **{i}** and **{j}** both broken."
         )
     elif cur is not None:
-        st.info(f"Comparing key **{cur['i']}** vs key **{cur['j']}** … no shared prime.")
+        st.info(f"Comparing key **{cur['i']}** vs key **{cur['j']}** ... no shared prime.")
 
     # ---- the key grid ----------------------------------------------------- #
     st.subheader("The fleet")
@@ -144,7 +144,7 @@ def page_batch_gcd() -> None:
             revealed = idx in reveal_at and reveal_at[idx] < step
             color = BROKEN_COLOR if revealed else LOCKED_COLOR
             border = "3px solid #ffd60a" if idx in active else "1px solid #555"
-            label = "🔓" if revealed else "🔒"
+            label = "broken" if revealed else "locked"
             tag = (f"<br><span style='font-size:9px;opacity:.85;'>group {key_group[idx]}</span>"
                    if revealed and idx in key_group else "")
             cols[off].markdown(
@@ -175,11 +175,11 @@ def page_batch_gcd() -> None:
             f"- p = `{fingerprint(rec['p'])}`\n- q = `{fingerprint(rec['q'])}`\n"
             f"- d = `{fingerprint(rec['d'])}`"
         )
-        st.success("✅ Recovered private key matches the real one." if ok
-                   else "❌ mismatch (bug)")
+        st.success("Recovered private key matches the real one." if ok
+                   else "mismatch (bug)")
 
     # ---- the fix ---------------------------------------------------------- #
-    with st.expander("🛡️  The fix — properly seed the RNG"):
+    with st.expander(" The fix - properly seed the RNG"):
         st.write(
             "A properly seeded RNG draws **both** primes freshly from the full "
             "~10⁷⁴ possibilities, so every prime across the fleet is unique, no two "
@@ -212,15 +212,15 @@ def _advance_to_next_collision(frames: list[dict], step: int, max_scan: int = 60
 # ========================================================================== #
 def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
     c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
-    if c1.button("▶ Play", key=prefix + "play", use_container_width=True):
+    if c1.button("Play", key=prefix + "play", use_container_width=True):
         st.session_state[prefix + "playing"] = True
-    if c2.button("⏭ Step", key=prefix + "stepbtn", use_container_width=True):
+    if c2.button("Step", key=prefix + "stepbtn", use_container_width=True):
         st.session_state[prefix + "playing"] = False
         st.session_state[prefix + "step"] = min(st.session_state[prefix + "step"] + step_amt, total)
-    if c3.button("⏮ Reset", key=prefix + "reset", use_container_width=True):
+    if c3.button("Reset", key=prefix + "reset", use_container_width=True):
         st.session_state[prefix + "playing"] = False
         st.session_state[prefix + "step"] = 0
-    if c4.button("⏩ Run to end", key=prefix + "end", use_container_width=True):
+    if c4.button("Run to end", key=prefix + "end", use_container_width=True):
         st.session_state[prefix + "playing"] = False
         st.session_state[prefix + "step"] = total
     return st.session_state[prefix + "step"]
@@ -239,7 +239,7 @@ def _drive(prefix: str, step: int, total: int, speed: int, stride: int = 1) -> N
 #  Attack page: Fermat factorisation
 # ========================================================================== #
 def page_fermat() -> None:
-    st.title("📐 Fermat factorisation — close primes")
+    st.title("Fermat factorisation - close primes")
     st.caption(
         "When p and q are generated too close together, N = p·q sits just below a "
         "perfect square. A search upward from ⌈√N⌉ then factors it in a few steps."
@@ -248,19 +248,19 @@ def page_fermat() -> None:
         st.header("Key settings")
         bits = st.selectbox("Key size (bits)", [128, 256, 512, 1024, 2048], index=1, key="fr_bits")
         half = bits // 2
-        difficulty = st.slider("Search length (log₂ steps) — bigger = longer, more dramatic",
+        difficulty = st.slider("Search length (log₂ steps) - bigger = longer, more dramatic",
                                0, 16, 11, key="fr_diff",
                                help="Controls how close p and q are. The search takes ~2^this steps "
                                     "and works at any key size, 2048 included.")
-        # gap chosen so Fermat takes ~2**difficulty steps:  steps ≈ 2^(2·gap − half − 3)
+        # gap chosen so Fermat takes ~2**difficulty steps:  steps ≈ 2^(2·gap - half - 3)
         gap = min((difficulty + half + 3) // 2, half - 2)
         seed = st.number_input("Seed", value=1, step=1, key="fr_seed")
-        gen = st.button("🔑 Generate key", type="primary", use_container_width=True, key="fr_gen")
+        gen = st.button("Generate key", type="primary", use_container_width=True, key="fr_gen")
         st.divider()
         speed = st.slider("Animation speed", 1, 20, 12, key="fr_speed")
 
     if gen or "fr_frames" not in st.session_state:
-        with st.spinner(f"Generating a {bits}-bit key…"):
+        with st.spinner(f"Generating a {bits}-bit key..."):
             key = keygen.close_primes_key(bits=bits, gap_bits=gap, seed=int(seed))
             frames = []
             for fr in fermat.iter_steps(key.n, max_steps=300_000):
@@ -287,17 +287,17 @@ def page_fermat() -> None:
 
     m1, m2, m3 = st.columns(3)
     m1.metric("Steps searched", f"{(cur['steps'] if cur else 0):,} / {total:,}")
-    m2.metric("Status", "BROKEN 🔓" if broke else "searching…")
+    m2.metric("Status", "BROKEN" if broke else "searching...")
     m3.metric("Prime gap", f"2^{gap}")
     st.progress(step / total if total else 0.0)
 
     shared = st.session_state.get("fr_shared_bits", 0)
-    st.markdown(f"**N** = `{fingerprint(key.n)}`  ({key.n.bit_length()} bits) — "
+    st.markdown(f"**N** = `{fingerprint(key.n)}`  ({key.n.bit_length()} bits) - "
                 f"p and q agree in their top ~{shared} of {bits // 2} bits, so √N is close.")
     if cur is not None:
         st.markdown(
-            f"Testing **a** = `{fingerprint(cur['a'])}` — is `a² − N` a perfect square?  "
-            + ("✅ **yes — factored!**" if cur["is_square"] else "❌ no, keep climbing")
+            f"Testing **a** = `{fingerprint(cur['a'])}` - is `a² - N` a perfect square?  "
+            + ("**yes - factored!**" if cur["is_square"] else "no, keep climbing")
         )
 
     if found_frame and step >= total:
@@ -308,19 +308,19 @@ def page_fermat() -> None:
         a, b = st.columns(2)
         a.markdown(f"**Public**\n\n- N = `{fingerprint(key.n)}`\n- e = `{key.e}`")
         b.markdown(f"**Recovered (secret)**\n\n- p = `{fingerprint(p)}`\n- q = `{fingerprint(q)}`\n- d = `{fingerprint(d)}`")
-        st.success("✅ Factored — recovered key matches the real one." if ok else "❌ mismatch (bug)")
+        st.success("Factored - recovered key matches the real one." if ok else "mismatch (bug)")
     elif step >= total:
-        st.warning("Not factored within the step budget — the primes weren't close enough. "
+        st.warning("Not factored within the step budget - the primes weren't close enough. "
                    "Lower the search length and regenerate.")
 
-    with st.expander("🛡️  The fix — draw p and q independently"):
+    with st.expander(" The fix - draw p and q independently"):
         st.write(
-            "With independently chosen primes, |p − q| is about 2^(bits/2) — "
-            "astronomically large — so `a` starts astronomically far from (p+q)/2 "
+            "With independently chosen primes, |p - q| is about 2^(bits/2) - "
+            "astronomically large - so `a` starts astronomically far from (p+q)/2 "
             "and the search never finishes."
         )
         resisted = st.session_state.get("fr_fix_resisted", True)
-        st.metric("Factored within 3000 steps", "no ✅ (resisted)" if resisted else "yes ❌")
+        st.metric("Factored within 3000 steps", "no(resisted)" if resisted else "yes")
 
     _drive("fr_", step, total, speed, stride=stride)
 
@@ -329,10 +329,10 @@ def page_fermat() -> None:
 #  Attack page: Wiener
 # ========================================================================== #
 def page_wiener() -> None:
-    st.title("🔑 Wiener's attack — tiny private exponent")
+    st.title("Wiener's attack - tiny private exponent")
     st.caption(
         "A small private exponent d (d < N^0.25) leaks through the "
-        "continued-fraction convergents of e/N — no factoring search needed."
+        "continued-fraction convergents of e/N - no factoring search needed."
     )
     with st.sidebar:
         st.header("Key settings")
@@ -340,15 +340,15 @@ def page_wiener() -> None:
         bound = bits // 4
         d_bits = st.slider("Size of private exponent d (bits)",
                            bound - 40, bound + 16, bound - 8, key="wn_dbits",
-                           help=f"N^0.25 ≈ 2^{bound}. Below it → Wiener works; above → safe.")
+                           help=f"N^0.25 ≈ 2^{bound}. Below it -> Wiener works; above -> safe.")
         seed = st.number_input("Seed", value=1, step=1, key="wn_seed")
-        gen = st.button("🔑 Generate key", type="primary", use_container_width=True, key="wn_gen")
+        gen = st.button("Generate key", type="primary", use_container_width=True, key="wn_gen")
         st.divider()
         speed = st.slider("Animation speed", 1, 20, 6, key="wn_speed")
 
     bound = bits // 4
     if gen or "wn_frames" not in st.session_state:
-        with st.spinner(f"Generating a {bits}-bit key…"):
+        with st.spinner(f"Generating a {bits}-bit key..."):
             key = keygen.small_d_key(bits=bits, d_bits=int(d_bits), seed=int(seed))
             frames = list(wiener.iter_steps(key.public()))
             safe = keygen.safe_key(bits=bits)
@@ -378,15 +378,15 @@ def page_wiener() -> None:
     m3.metric("N^0.25 cliff", f"{bound} bits", delta=f"{dbits - bound:+d} vs cliff",
               delta_color="inverse")
     st.progress(step / total if total else 0.0)
-    st.caption("🟢 d is **below** the N^0.25 cliff — Wiener should succeed."
+    st.caption("d is **below** the N^0.25 cliff - Wiener should succeed."
                if vulnerable else
-               "🔴 d is **above** the cliff — Wiener should fail (the safe zone).")
+               "d is **above** the cliff - Wiener should fail (the safe zone).")
 
     if cur is not None:
-        msg = (f"Convergent #{cur['idx']}:  k = `{cur['k']}`,  d = `{fingerprint(cur['d'])}`  —  "
-               + ("φ(N) comes out an integer ✅  " if cur["phi_integer"]
-                  else "φ(N) not an integer ❌  ")
-               + ("**→ factors N! 🔓**" if cur["found"] else ""))
+        msg = (f"Convergent #{cur['idx']}:  k = `{cur['k']}`,  d = `{fingerprint(cur['d'])}`  -  "
+               + ("φ(N) comes out an integer " if cur["phi_integer"]
+                  else "φ(N) not an integer ")
+               + ("**-> factors N!**" if cur["found"] else ""))
         st.markdown(msg)
 
     if found_frame and step >= total:
@@ -396,17 +396,17 @@ def page_wiener() -> None:
         a, b = st.columns(2)
         a.markdown(f"**Public**\n\n- N = `{fingerprint(key.n)}`\n- e = `{fingerprint(key.e)}`")
         b.markdown(f"**Recovered (secret)**\n\n- d = `{fingerprint(d)}`\n- p = `{fingerprint(p)}`\n- q = `{fingerprint(q)}`")
-        st.success("✅ Recovered d matches the real private key." if ok else "❌ mismatch (bug)")
+        st.success("Recovered d matches the real private key." if ok else "mismatch (bug)")
     elif step >= total:
-        st.warning("No convergent factored N — d was too large for Wiener. That's the safe case.")
+        st.warning("No convergent factored N - d was too large for Wiener. That's the safe case.")
 
-    with st.expander("🛡️  The fix — pick e first, derive d"):
+    with st.expander(" The fix - pick e first, derive d"):
         st.write(
             "A proper key fixes e = 65537 and derives d, so d is about as large as N. "
             "None of the convergents of e/N reveal it."
         )
         st.metric("Wiener on a proper key",
-                  "fails ✅" if st.session_state.get("wn_fix_fails", True) else "breaks ❌")
+                  "fails" if st.session_state.get("wn_fix_fails", True) else "breaks")
 
     _drive("wn_", step, total, speed)
 
@@ -415,7 +415,7 @@ def page_wiener() -> None:
 #  Attack page: Håstad broadcast
 # ========================================================================== #
 def page_hastad() -> None:
-    st.title("📡 Håstad broadcast — e = 3, no padding")
+    st.title("Håstad broadcast - e = 3, no padding")
     st.caption(
         "Send the same unpadded message to ≥ 3 people with e = 3: combining the "
         "ciphertexts by CRT and taking a cube root recovers it, with no factoring."
@@ -427,13 +427,13 @@ def page_hastad() -> None:
                               help="The attack needs at least e = 3.")
         message = st.text_input("Secret message", "crypto", key="hs_msg")
         seed = st.number_input("Seed", value=1, step=1, key="hs_seed")
-        gen = st.button("📣 Broadcast", type="primary", use_container_width=True, key="hs_gen")
+        gen = st.button("Broadcast", type="primary", use_container_width=True, key="hs_gen")
         st.divider()
         speed = st.slider("Animation speed", 1, 20, 3, key="hs_speed")
 
     e = 3
     if gen or "hs_frames" not in st.session_state:
-      with st.spinner(f"Generating {recipients} keys at {bits}-bit…"):
+      with st.spinner(f"Generating {recipients} keys at {bits}-bit..."):
         keys = [keygen.small_e_key(bits=bits, e=e, seed=int(seed) * 100 + i)
                 for i in range(recipients)]
         raw = message.encode("utf-8") or b"\x00"
@@ -459,7 +459,7 @@ def page_hastad() -> None:
 
     m1, m2 = st.columns(2)
     m1.metric("Ciphertexts combined", f"{min(step, len(keys))} / {len(keys)}")
-    m2.metric("Status", "RECOVERED 🔓" if recovered else "combining…")
+    m2.metric("Status", "RECOVERED" if recovered else "combining...")
     st.progress(step / total if total else 0.0)
 
     # recipient cards
@@ -477,7 +477,7 @@ def page_hastad() -> None:
         cols[i].markdown(
             f"<div style='background:{color};border:1px solid #555;border-radius:8px;"
             f"padding:8px;text-align:center;font-size:12px;color:#fff;'>"
-            f"<b>#{i}</b><br>{'📨' if lit else '🔒'}<br>"
+            f"<b>#{i}</b><br>{'sent' if lit else 'waiting'}<br>"
             f"<span style='font-family:monospace;font-size:9px;'>N={fingerprint(k.n)}</span>"
             f"</div>",
             unsafe_allow_html=True,
@@ -485,7 +485,7 @@ def page_hastad() -> None:
 
     if cur is not None and cur.get("stage") == "combine":
         st.markdown(
-            f"Folded in ciphertext #{cur['added']} → combined value `{fingerprint(cur['combined'])}`"
+            f"Folded in ciphertext #{cur['added']} -> combined value `{fingerprint(cur['combined'])}`"
             + ("" if cur["enough"] else "  *(need ≥ 3 before the cube root works)*")
         )
     elif cur is not None and cur.get("stage") == "root":
@@ -498,16 +498,16 @@ def page_hastad() -> None:
                 txt = m.to_bytes((m.bit_length() + 7) // 8, "big").decode("utf-8", "replace")
             except Exception:
                 txt = str(m)
-            st.success(f"✅ Recovered message:  **{txt}**")
-            st.caption("Recovered from ciphertexts alone — no key was factored.")
+            st.success(f"Recovered message:  **{txt}**")
+            st.caption("Recovered from ciphertexts alone - no key was factored.")
         else:
-            st.error("❌ Cube root not exact — fewer than 3 ciphertexts. Håstad needs e = 3 of them. "
+            st.error("Cube root not exact - fewer than 3 ciphertexts. Håstad needs e = 3 of them. "
                      "Raise the recipient count to 3+.")
 
-    with st.expander("🛡️  The fix — pad the message (OAEP)"):
+    with st.expander(" The fix - pad the message (OAEP)"):
         st.write(
             "Randomised OAEP padding makes each recipient's plaintext different, so the "
-            "ciphertexts are no longer encryptions of the *same* integer — CRT has nothing "
+            "ciphertexts are no longer encryptions of the *same* integer - CRT has nothing "
             "to line up, and the cube root is meaningless."
         )
 
@@ -517,15 +517,34 @@ def page_hastad() -> None:
 # ========================================================================== #
 #  Navigation
 # ========================================================================== #
-PAGES = {
+MAIN_PAGES = {
     "Batch GCD (low-entropy RNG)": page_batch_gcd,
-    "Fermat (close primes)": page_fermat,
     "Wiener (small d)": page_wiener,
+}
+MORE_PAGES = {
+    "Fermat (close primes)": page_fermat,
     "Håstad (e=3 broadcast)": page_hastad,
 }
+ALL_PAGES = {**MAIN_PAGES, **MORE_PAGES}
 
-st.sidebar.title("Weak RSA 🔓")
+if "active_page" not in st.session_state:
+    st.session_state.active_page = next(iter(MAIN_PAGES))
+
+
+def _pick_main():
+    st.session_state.active_page = st.session_state.main_nav
+
+
+def _pick_more():
+    st.session_state.active_page = st.session_state.more_nav
+
+
+st.sidebar.title("Weak RSA")
 st.sidebar.caption("Pick a weakness, then watch the attack.")
-choice = st.sidebar.radio("Attack", list(PAGES), label_visibility="collapsed")
+st.sidebar.radio("Attack", list(MAIN_PAGES), key="main_nav",
+                 on_change=_pick_main, label_visibility="collapsed")
+with st.sidebar.expander("More attacks (backup)"):
+    st.radio("More", list(MORE_PAGES), key="more_nav",
+             on_change=_pick_more, label_visibility="collapsed")
 st.sidebar.divider()
-PAGES[choice]()
+ALL_PAGES[st.session_state.active_page]()
