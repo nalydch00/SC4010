@@ -42,8 +42,8 @@ def page_batch_gcd() -> None:
     # ---- controls ---------------------------------------------------------- #
     with st.sidebar:
         st.header("Fleet settings")
-        bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1,
-                            help="Attack is size-independent; smaller keeps the demo snappy.")
+        bits = st.selectbox("Key size (bits)", [256, 512, 1024, 2048], index=1,
+                            help="2048 = real-size. Attack is size-independent; smaller keeps the demo snappy.")
         count = st.slider("Number of devices", 10, 100, 40)
         entropy = st.slider("RNG entropy (distinct 1st primes)", 3, 300, 12,
                            help="Distinct values p can take. Set it far above the device "
@@ -55,16 +55,21 @@ def page_batch_gcd() -> None:
 
     # ---- (re)generate the fleet ------------------------------------------- #
     if gen or "bg_farm" not in st.session_state:
-        farm = keygen.low_entropy_farm(count=count, bits=bits,
-                                       entropy_primes=entropy, seed=int(seed))
-        found = batch_gcd.batch_gcd(farm.moduli)
-        frames = list(batch_gcd.iter_pairwise(farm.moduli))
-        # first frame index at which each key is revealed as broken
-        reveal_at: dict[int, int] = {}
-        for idx, fr in enumerate(frames):
-            if fr["collision"]:
-                reveal_at.setdefault(fr["i"], idx)
-                reveal_at.setdefault(fr["j"], idx)
+        with st.spinner(f"Generating {count} keys at {bits}-bit…"):
+            farm = keygen.low_entropy_farm(count=count, bits=bits,
+                                           entropy_primes=entropy, seed=int(seed))
+            found = batch_gcd.batch_gcd(farm.moduli)
+            frames = list(batch_gcd.iter_pairwise(farm.moduli))
+            # first frame index at which each key is revealed as broken
+            reveal_at: dict[int, int] = {}
+            for idx, fr in enumerate(frames):
+                if fr["collision"]:
+                    reveal_at.setdefault(fr["i"], idx)
+                    reveal_at.setdefault(fr["j"], idx)
+            # the "fix" demonstration, computed once here (not on every rerun)
+            safe_n = min(count, 25)
+            safe_mods = [keygen.safe_key(bits=bits).n for _ in range(safe_n)]
+            st.session_state.bg_fix = (len(batch_gcd.batch_gcd(safe_mods)), safe_n)
         st.session_state.bg_farm = farm
         st.session_state.bg_found = found
         st.session_state.bg_frames = frames
@@ -178,12 +183,10 @@ def page_batch_gcd() -> None:
         st.write(
             "A properly seeded RNG draws **both** primes freshly from the full "
             "~10⁷⁴ possibilities, so every prime across the fleet is unique, no two "
-            "moduli share a factor, and every GCD is 1. Same fleet size, real randomness:"
+            "moduli share a factor, and every GCD is 1. A truly random fleet:"
         )
-        safe_keys = [keygen.safe_key(bits=bits) for _ in range(count)]
-        safe_mods = [k.n for k in safe_keys]
-        safe_found = batch_gcd.batch_gcd(safe_mods)
-        st.metric("Keys broken with the fix", f"{len(safe_found)} / {len(safe_keys)}")
+        fix_broken, fix_n = st.session_state.get("bg_fix", (0, 0))
+        st.metric("Keys broken with the fix", f"{fix_broken} / {fix_n}")
 
     # ---- drive the animation --------------------------------------------- #
     if st.session_state.bg_playing and step < total:
@@ -243,24 +246,32 @@ def page_fermat() -> None:
     )
     with st.sidebar:
         st.header("Key settings")
-        bits = st.selectbox("Key size (bits)", [128, 256, 512, 1024], index=1, key="fr_bits")
-        max_gap = bits // 2 - 4
-        gap = st.slider("Prime gap (bits) — smaller = closer = faster to break",
-                        20, max_gap, min(72, max_gap), key="fr_gap")
+        bits = st.selectbox("Key size (bits)", [128, 256, 512, 1024, 2048], index=1, key="fr_bits")
+        half = bits // 2
+        difficulty = st.slider("Search length (log₂ steps) — bigger = longer, more dramatic",
+                               0, 16, 11, key="fr_diff",
+                               help="Controls how close p and q are. The search takes ~2^this steps "
+                                    "and works at any key size, 2048 included.")
+        # gap chosen so Fermat takes ~2**difficulty steps:  steps ≈ 2^(2·gap − half − 3)
+        gap = min((difficulty + half + 3) // 2, half - 2)
         seed = st.number_input("Seed", value=1, step=1, key="fr_seed")
         gen = st.button("🔑 Generate key", type="primary", use_container_width=True, key="fr_gen")
         st.divider()
         speed = st.slider("Animation speed", 1, 20, 12, key="fr_speed")
 
     if gen or "fr_frames" not in st.session_state:
-        key = keygen.close_primes_key(bits=bits, gap_bits=gap, seed=int(seed))
-        frames = []
-        for fr in fermat.iter_steps(key.n, max_steps=300_000):
-            frames.append(fr)
-            if fr["found"] or len(frames) >= 30_000:
-                break
+        with st.spinner(f"Generating a {bits}-bit key…"):
+            key = keygen.close_primes_key(bits=bits, gap_bits=gap, seed=int(seed))
+            frames = []
+            for fr in fermat.iter_steps(key.n, max_steps=300_000):
+                frames.append(fr)
+                if fr["found"] or len(frames) >= 30_000:
+                    break
+            safe = keygen.safe_key(bits=bits)
+            st.session_state.fr_fix_resisted = fermat.attack(safe.public(), max_steps=3000) is None
         st.session_state.fr_key = key
         st.session_state.fr_frames = frames
+        st.session_state.fr_shared_bits = half - gap
         st.session_state.fr_step = 0
         st.session_state.fr_playing = False
 
@@ -280,7 +291,9 @@ def page_fermat() -> None:
     m3.metric("Prime gap", f"2^{gap}")
     st.progress(step / total if total else 0.0)
 
-    st.markdown(f"**N** = `{fingerprint(key.n)}`  ({key.n.bit_length()} bits)")
+    shared = st.session_state.get("fr_shared_bits", 0)
+    st.markdown(f"**N** = `{fingerprint(key.n)}`  ({key.n.bit_length()} bits) — "
+                f"p and q agree in their top ~{shared} of {bits // 2} bits, so √N is close.")
     if cur is not None:
         st.markdown(
             f"Testing **a** = `{fingerprint(cur['a'])}` — is `a² − N` a perfect square?  "
@@ -298,7 +311,7 @@ def page_fermat() -> None:
         st.success("✅ Factored — recovered key matches the real one." if ok else "❌ mismatch (bug)")
     elif step >= total:
         st.warning("Not factored within the step budget — the primes weren't close enough. "
-                   "Lower the prime gap and regenerate.")
+                   "Lower the search length and regenerate.")
 
     with st.expander("🛡️  The fix — draw p and q independently"):
         st.write(
@@ -306,9 +319,8 @@ def page_fermat() -> None:
             "astronomically large — so `a` starts astronomically far from (p+q)/2 "
             "and the search never finishes."
         )
-        safe = keygen.safe_key(bits=bits)
-        res = fermat.attack(safe.public(), max_steps=3000)
-        st.metric("Factored within 3000 steps", "no ✅ (resisted)" if res is None else "yes ❌")
+        resisted = st.session_state.get("fr_fix_resisted", True)
+        st.metric("Factored within 3000 steps", "no ✅ (resisted)" if resisted else "yes ❌")
 
     _drive("fr_", step, total, speed, stride=stride)
 
@@ -324,7 +336,7 @@ def page_wiener() -> None:
     )
     with st.sidebar:
         st.header("Key settings")
-        bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1, key="wn_bits")
+        bits = st.selectbox("Key size (bits)", [256, 512, 1024, 2048], index=1, key="wn_bits")
         bound = bits // 4
         d_bits = st.slider("Size of private exponent d (bits)",
                            bound - 40, bound + 16, bound - 8, key="wn_dbits",
@@ -336,8 +348,11 @@ def page_wiener() -> None:
 
     bound = bits // 4
     if gen or "wn_frames" not in st.session_state:
-        key = keygen.small_d_key(bits=bits, d_bits=int(d_bits), seed=int(seed))
-        frames = list(wiener.iter_steps(key.public()))
+        with st.spinner(f"Generating a {bits}-bit key…"):
+            key = keygen.small_d_key(bits=bits, d_bits=int(d_bits), seed=int(seed))
+            frames = list(wiener.iter_steps(key.public()))
+            safe = keygen.safe_key(bits=bits)
+            st.session_state.wn_fix_fails = wiener.attack(safe.public()) is None
         st.session_state.wn_key = key
         st.session_state.wn_frames = frames
         st.session_state.wn_gen_dbits = int(d_bits)
@@ -387,9 +402,8 @@ def page_wiener() -> None:
             "A proper key fixes e = 65537 and derives d, so d is about as large as N. "
             "None of the convergents of e/N reveal it."
         )
-        safe = keygen.safe_key(bits=bits)
         st.metric("Wiener on a proper key",
-                  "fails ✅" if wiener.attack(safe.public()) is None else "breaks ❌")
+                  "fails ✅" if st.session_state.get("wn_fix_fails", True) else "breaks ❌")
 
     _drive("wn_", step, total, speed)
 
@@ -405,7 +419,7 @@ def page_hastad() -> None:
     )
     with st.sidebar:
         st.header("Broadcast settings")
-        bits = st.selectbox("Key size (bits)", [256, 512, 1024], index=1, key="hs_bits")
+        bits = st.selectbox("Key size (bits)", [256, 512, 1024, 2048], index=1, key="hs_bits")
         recipients = st.slider("Number of recipients", 2, 6, 3, key="hs_rcpt",
                               help="The attack needs at least e = 3.")
         message = st.text_input("Secret message", "crypto", key="hs_msg")
@@ -416,6 +430,7 @@ def page_hastad() -> None:
 
     e = 3
     if gen or "hs_frames" not in st.session_state:
+      with st.spinner(f"Generating {recipients} keys at {bits}-bit…"):
         keys = [keygen.small_e_key(bits=bits, e=e, seed=int(seed) * 100 + i)
                 for i in range(recipients)]
         raw = message.encode("utf-8") or b"\x00"
