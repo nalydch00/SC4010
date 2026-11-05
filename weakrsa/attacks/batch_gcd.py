@@ -108,3 +108,42 @@ def recover_key(n: int, shared_prime: int, e: int) -> dict:
     phi = (p - 1) * (q - 1)
     d = modinv(e, phi)
     return {"p": max(p, q), "q": min(p, q), "d": d}
+
+
+# --------------------------------------------------------------------------- #
+# Step-by-step variants, for the interactive visualizer.
+# These expose the *intermediate* progress of the attack so a UI can animate it;
+# the one-shot functions above remain the fast path used by demo/benchmark.
+# --------------------------------------------------------------------------- #
+def iter_pairwise(moduli: list[int]):
+    """Yield one frame per pair comparison, in order.
+
+    Each frame is a dict:
+        {'i', 'j', 'gcd', 'collision', 'checked', 'total'}
+    where 'collision' is True when gcd(N_i, N_j) is a non-trivial shared prime.
+    This is the naive O(n**2) attack, which is the one worth *watching* — the
+    product-tree version is fast but has nothing to animate.
+    """
+    n = len(moduli)
+    total = n * (n - 1) // 2
+    checked = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            g = gcd(moduli[i], moduli[j])
+            checked += 1
+            yield {
+                "i": i,
+                "j": j,
+                "gcd": g,
+                "collision": g != 1,
+                "checked": checked,
+                "total": total,
+            }
+
+
+def clusters(moduli: list[int], found: dict[int, int]) -> dict[int, list[int]]:
+    """Group broken keys by the prime they share. {prime: [key indices]}."""
+    groups: dict[int, list[int]] = {}
+    for idx, prime in found.items():
+        groups.setdefault(prime, []).append(idx)
+    return {p: ks for p, ks in groups.items() if len(ks) >= 2}
