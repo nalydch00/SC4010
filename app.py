@@ -356,6 +356,7 @@ def page_wiener() -> None:
         st.session_state.wn_key = key
         st.session_state.wn_frames = frames
         st.session_state.wn_gen_dbits = int(d_bits)
+        st.session_state.wn_gen_bits = bits
         st.session_state.wn_step = 0
         st.session_state.wn_playing = False
 
@@ -363,6 +364,8 @@ def page_wiener() -> None:
     frames = st.session_state.wn_frames
     total = len(frames)
     dbits = st.session_state.wn_gen_dbits
+    # cliff must match the key that was actually generated, not the live dropdown
+    bound = st.session_state.get("wn_gen_bits", bits) // 4
     found_frame = frames[-1] if frames and frames[-1]["found"] else None
     vulnerable = dbits < bound
 
