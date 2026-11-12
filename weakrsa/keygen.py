@@ -11,6 +11,7 @@ right way, so you can confirm every attack *fails* against it.
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass, field
 
 import gmpy2
@@ -45,13 +46,25 @@ class RSAKey:
 
 
 def _rand_prime(bits: int) -> int:
+    """A cryptographically secure random prime of exactly `bits` bits.
+
+    Uses the `secrets` module (a CSPRNG seeded from the OS entropy source,
+    os.urandom) to pick the candidate, then takes the next prime. This is how a
+    *correctly* generated key should draw its primes. The deliberately weak
+    generators below bypass this to create the vulnerabilities we attack.
+    """
     lo = 1 << (bits - 1)
-    hi = (1 << bits) - 1
-    return int(randprime(lo, hi))
+    hi = 1 << bits
+    while True:
+        candidate = lo + secrets.randbelow(lo)   # CSPRNG, in [2**(bits-1), 2**bits)
+        p = int(nextprime(candidate))
+        if p < hi:
+            return p
 
 
 def _seeded_prime(rng, bits: int) -> int:
-    """Deterministic prime of the given bit-length from a seeded random.Random."""
+    """Deterministic prime from a seeded PRNG -- used only for reproducible demos
+    and for the deliberately weak generators (never for secure keys)."""
     return int(nextprime(rng.randrange(1 << (bits - 1), 1 << bits)))
 
 
