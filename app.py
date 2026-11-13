@@ -192,7 +192,7 @@ def page_batch_gcd() -> None:
     # ---- drive the animation (finishes in ~PLAY_SECONDS) ----------------- #
     if st.session_state.bg_playing and step < total:
         start = st.session_state.get("bg_play_start", time.time())
-        frac = min(1.0, (time.time() - start) / PLAY_SECONDS)
+        frac = min(1.0, (time.time() - start) / BATCH_SECONDS)
         st.session_state.bg_step = total if frac >= 1.0 else max(step, int(frac * total))
         if st.session_state.bg_step >= total:
             st.session_state.bg_playing = False   # stop, but still rerun once to show the final frame
@@ -215,7 +215,9 @@ def _advance_to_next_collision(frames: list[dict], step: int, max_scan: int = 60
 # ========================================================================== #
 #  Shared transport controls for the single-key pages
 # ========================================================================== #
-PLAY_SECONDS = 3.0   # a Play run always finishes in about this many seconds
+PLAY_SECONDS = 3.0    # default Play duration (Fermat, Hastad)
+BATCH_SECONDS = 5.0   # Batch GCD: O(n^2) pairwise sweep, shown a touch longer
+WIENER_SECONDS = 1.5  # Wiener: O(log N) continued fractions, much faster in reality
 
 
 def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
@@ -236,10 +238,10 @@ def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
     return st.session_state[prefix + "step"]
 
 
-def _drive(prefix: str, step: int, total: int) -> None:
+def _drive(prefix: str, step: int, total: int, seconds: float = PLAY_SECONDS) -> None:
     if st.session_state.get(prefix + "playing") and step < total:
         start = st.session_state.get(prefix + "play_start", time.time())
-        frac = min(1.0, (time.time() - start) / PLAY_SECONDS)
+        frac = min(1.0, (time.time() - start) / seconds)
         st.session_state[prefix + "step"] = total if frac >= 1.0 else max(step, int(frac * total))
         if st.session_state[prefix + "step"] >= total:
             st.session_state[prefix + "playing"] = False   # stop, but still rerun once to show the final frame
@@ -420,7 +422,7 @@ def page_wiener() -> None:
         st.metric("Wiener on a proper key",
                   "fails" if st.session_state.get("wn_fix_fails", True) else "breaks")
 
-    _drive("wn_", step, total)
+    _drive("wn_", step, total, seconds=WIENER_SECONDS)
 
 
 # ========================================================================== #
