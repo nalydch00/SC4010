@@ -51,7 +51,6 @@ def page_batch_gcd() -> None:
         seed = st.number_input("RNG seed", value=1234, step=1)
         gen = st.button("Generate fleet", type="primary", use_container_width=True)
         st.divider()
-        speed = st.slider("Animation speed", 1, 20, 8)
 
     # ---- (re)generate the fleet ------------------------------------------- #
     if gen or "bg_farm" not in st.session_state:
@@ -97,6 +96,8 @@ def page_batch_gcd() -> None:
     c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
     if c1.button("Play", use_container_width=True):
         st.session_state.bg_playing = True
+        st.session_state.bg_play_start = time.time()
+        st.session_state.bg_step = 0
     if c2.button("Step", use_container_width=True):
         st.session_state.bg_playing = False
         st.session_state.bg_step = _advance_to_next_collision(
@@ -188,10 +189,14 @@ def page_batch_gcd() -> None:
         fix_broken, fix_n = st.session_state.get("bg_fix", (0, 0))
         st.metric("Keys broken with the fix", f"{fix_broken} / {fix_n}")
 
-    # ---- drive the animation --------------------------------------------- #
+    # ---- drive the animation (finishes in ~PLAY_SECONDS) ----------------- #
     if st.session_state.bg_playing and step < total:
-        st.session_state.bg_step = _advance_to_next_collision(frames, step)
-        time.sleep(1.0 / speed)
+        start = st.session_state.get("bg_play_start", time.time())
+        frac = min(1.0, (time.time() - start) / PLAY_SECONDS)
+        st.session_state.bg_step = total if frac >= 1.0 else max(step, int(frac * total))
+        if st.session_state.bg_step >= total:
+            st.session_state.bg_playing = False   # stop, but still rerun once to show the final frame
+        time.sleep(0.05)
         st.rerun()
     elif step >= total:
         st.session_state.bg_playing = False
@@ -210,10 +215,15 @@ def _advance_to_next_collision(frames: list[dict], step: int, max_scan: int = 60
 # ========================================================================== #
 #  Shared transport controls for the single-key pages
 # ========================================================================== #
+PLAY_SECONDS = 3.0   # a Play run always finishes in about this many seconds
+
+
 def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
     c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
     if c1.button("Play", key=prefix + "play", use_container_width=True):
         st.session_state[prefix + "playing"] = True
+        st.session_state[prefix + "play_start"] = time.time()
+        st.session_state[prefix + "step"] = 0
     if c2.button("Step", key=prefix + "stepbtn", use_container_width=True):
         st.session_state[prefix + "playing"] = False
         st.session_state[prefix + "step"] = min(st.session_state[prefix + "step"] + step_amt, total)
@@ -226,10 +236,14 @@ def _run_controls(prefix: str, total: int, step_amt: int = 1) -> int:
     return st.session_state[prefix + "step"]
 
 
-def _drive(prefix: str, step: int, total: int, speed: int, stride: int = 1) -> None:
+def _drive(prefix: str, step: int, total: int) -> None:
     if st.session_state.get(prefix + "playing") and step < total:
-        st.session_state[prefix + "step"] = min(step + stride, total)
-        time.sleep(1.0 / speed)
+        start = st.session_state.get(prefix + "play_start", time.time())
+        frac = min(1.0, (time.time() - start) / PLAY_SECONDS)
+        st.session_state[prefix + "step"] = total if frac >= 1.0 else max(step, int(frac * total))
+        if st.session_state[prefix + "step"] >= total:
+            st.session_state[prefix + "playing"] = False   # stop, but still rerun once to show the final frame
+        time.sleep(0.05)
         st.rerun()
     elif step >= total:
         st.session_state[prefix + "playing"] = False
@@ -257,7 +271,6 @@ def page_fermat() -> None:
         seed = st.number_input("Seed", value=1, step=1, key="fr_seed")
         gen = st.button("Generate key", type="primary", use_container_width=True, key="fr_gen")
         st.divider()
-        speed = st.slider("Animation speed", 1, 20, 12, key="fr_speed")
 
     if gen or "fr_frames" not in st.session_state:
         with st.spinner(f"Generating a {bits}-bit key..."):
@@ -322,7 +335,7 @@ def page_fermat() -> None:
         resisted = st.session_state.get("fr_fix_resisted", True)
         st.metric("Factored within 3000 steps", "no(resisted)" if resisted else "yes")
 
-    _drive("fr_", step, total, speed, stride=stride)
+    _drive("fr_", step, total)
 
 
 # ========================================================================== #
@@ -344,7 +357,6 @@ def page_wiener() -> None:
         seed = st.number_input("Seed", value=1, step=1, key="wn_seed")
         gen = st.button("Generate key", type="primary", use_container_width=True, key="wn_gen")
         st.divider()
-        speed = st.slider("Animation speed", 1, 20, 6, key="wn_speed")
 
     bound = bits // 4
     if gen or "wn_frames" not in st.session_state:
@@ -408,7 +420,7 @@ def page_wiener() -> None:
         st.metric("Wiener on a proper key",
                   "fails" if st.session_state.get("wn_fix_fails", True) else "breaks")
 
-    _drive("wn_", step, total, speed)
+    _drive("wn_", step, total)
 
 
 # ========================================================================== #
@@ -429,7 +441,6 @@ def page_hastad() -> None:
         seed = st.number_input("Seed", value=1, step=1, key="hs_seed")
         gen = st.button("Broadcast", type="primary", use_container_width=True, key="hs_gen")
         st.divider()
-        speed = st.slider("Animation speed", 1, 20, 3, key="hs_speed")
 
     e = 3
     if gen or "hs_frames" not in st.session_state:
@@ -511,7 +522,7 @@ def page_hastad() -> None:
             "to line up, and the cube root is meaningless."
         )
 
-    _drive("hs_", step, total, speed)
+    _drive("hs_", step, total)
 
 
 # ========================================================================== #
